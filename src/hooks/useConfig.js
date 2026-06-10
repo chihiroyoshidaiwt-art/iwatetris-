@@ -6,9 +6,9 @@ export const DEFAULT_CONFIG = {
   innerTop:  0.10,
   innerW:    0.44,
   innerH:    0.72,
-  // 背景テーマ
-  bgTheme: 'galaxy',
-  bgColor: '#010510',
+  // グリッドサイズ
+  cols: 10,
+  rows: 22,
 }
 
 function load() {

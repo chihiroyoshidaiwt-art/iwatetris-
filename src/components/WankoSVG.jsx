@@ -31,13 +31,12 @@ export default function WankoSVG({ type, size: s }) {
 
 export function MiniPiece({ shape, type, cell }) {
   if (!shape) return null
-  const { name } = WANKO_TYPES[type % WANKO_TYPES.length]
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {shape.map((row, r) => (
         <div key={r} style={{ display: 'flex' }}>
           {row.map((v, c) => (
-            <div key={c} style={{ width: cell, height: cell, flexShrink: 0, border: v ? '1.5px solid rgba(200,160,80,0.7)' : 'none', borderRadius: 2, boxSizing: 'border-box', overflow: 'hidden' }}>
+            <div key={c} style={{ width: cell, height: cell, flexShrink: 0, border: v ? '1.5px solid rgba(200,160,60,.65)' : 'none', borderRadius: 2, boxSizing: 'border-box', overflow: 'hidden' }}>
               {v ? <WankoSVG type={type} size={cell} /> : null}
             </div>
           ))}
