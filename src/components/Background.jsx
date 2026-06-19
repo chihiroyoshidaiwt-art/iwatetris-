@@ -1,25 +1,24 @@
 import { useRef, useEffect } from 'react'
+import { COLORS } from '../theme.js'
 
-// 背景は主役ではない：blur + 彩度/明度ダウンで控えめに
-export default function Background({ mobile = false }) {
-  const isMob = mobile
+export default function Background({ mobile = false, config = {} }) {
+  const blur = config.bgBlur ?? 4
+  const brightness = config.bgBrightness ?? 0.85
+  const overlayOpacity = config.bgOpacity ?? 0.55
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden' }}>
-      {/* 背景画像：blur(4px) 彩度-20% 明度-15% */}
+    <div style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', background: COLORS.bg }}>
       <img
-        src={isMob ? '/assets/bg_sp.webp' : '/assets/bg_pc.webp'}
+        src={mobile ? '/assets/bg_sp.webp' : '/assets/bg_pc.webp'}
         alt=""
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           objectFit: 'cover', objectPosition: 'center bottom',
-          filter: 'blur(4px) saturate(0.8) brightness(0.85)',
-          transform: 'scale(1.02)', // blurの縁が見えないように少し拡大
+          filter: `blur(${blur}px) saturate(0.8) brightness(${brightness})`,
+          transform: 'scale(1.03)',
         }}
       />
-      {/* 暗いオーバーレイ：ゲーム本体を際立たせる */}
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,3,18,0.55)' }} />
-      {/* 星空（主役級、60%の主張） */}
+      <div style={{ position: 'absolute', inset: 0, background: `rgba(2,8,23,${overlayOpacity})` }} />
       <Stars />
     </div>
   )
@@ -33,7 +32,6 @@ function Stars() {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     let raf, t = 0
-
     const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight }
     resize()
     window.addEventListener('resize', resize)

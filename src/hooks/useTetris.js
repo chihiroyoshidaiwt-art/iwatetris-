@@ -14,8 +14,7 @@ export const SHAPES = {
 }
 export const SHAPE_KEYS = Object.keys(SHAPES)
 
-export const COMBO_LABELS  = ['', '1杯！', '2杯！', '3杯！', '4杯！', 'わんこそば名人！']
-export const SCORE_TABLE   = [0, 100, 300, 600, 1200]
+export const SCORE_TABLE = [0, 100, 300, 600, 1200]
 
 export const emptyBoard = () => Array.from({ length: ROWS }, () => Array(COLS).fill(null))
 export const rotate     = m  => m[0].map((_, i) => m.map(r => r[i]).reverse())
@@ -49,7 +48,24 @@ export function clearLines(board) {
   return { board: next, count }
 }
 
-export function useTetris() {
+// コンボ演出ラベル（わんこそば「杯」演出 + 達成マイルストーン）
+function getComboLabel(totalServed) {
+  if (totalServed >= 100) return '100杯達成！'
+  if (totalServed >= 50)  return '50杯達成！'
+  if (totalServed >= 10)  return '10杯達成！'
+  return `${totalServed}杯！`
+}
+
+// 宮沢賢治バージョン専用イベント
+const KENJI_EVENTS = [
+  { id: 'cat',    label: '注文の多い料理店 発生！', sub: '猫がブロックを1個破壊！', chance: 0.05 },
+  { id: 'wind',   label: '北風イベント！',           sub: 'ブロックが吹き飛ばされる！', chance: 0.05 },
+  { id: 'sun',    label: '太陽が出た！',             sub: '5秒間操作不能...',          chance: 0.03 },
+  { id: 'rain',   label: '雨ニモマケズ！',           sub: 'ランダムブロックが追加！',  chance: 0.03 },
+  { id: 'galaxy', label: '銀河鉄道通過！',           sub: 'スコア2倍ボーナスタイム！', chance: 0.02 },
+]
+
+export function useTetris(version = 'kenji') {
   const [board,       setBoard]      = useState(emptyBoard)
   const [piece,       setPiece]      = useState(randomPiece)
   const [nextPieces,  setNext]       = useState(() => [randomPiece(), randomPiece(), randomPiece()])
@@ -58,24 +74,71 @@ export function useTetris() {
   const [score,       setScore]      = useState(0)
   const [lines,       setLines]      = useState(0)
   const [combo,       setCombo]      = useState(0)
+  const [totalServed, setTotalServed]= useState(0) // 累計ライン消去数（杯数）
   const [level,       setLevel]      = useState(1)
   const [over,        setOver]       = useState(false)
   const [paused,      setPaused]     = useState(false)
   const [started,     setStarted]    = useState(false)
   const [comboAnim,   setComboAnim]  = useState(null)
   const [lineFlash,   setLineFlash]  = useState(false)
+  const [charEvent,   setCharEvent]  = useState(null)   // {label, sub}
+  const [scoreMultiplier, setScoreMultiplier] = useState(1)
+  const [frozen,       setFrozen]    = useState(false)  // 太陽イベント中操作不能
 
   const S = useRef({})
-  useEffect(() => { S.current = { board, piece, nextPieces, hold, canHold, score, lines, combo, level, over, paused, started } })
+  useEffect(() => { S.current = { board, piece, nextPieces, hold, canHold, score, lines, combo, totalServed, level, over, paused, started, scoreMultiplier, frozen } })
 
   const speed = Math.max(80, 900 - (level - 1) * 80)
+
+  const triggerCharEvent = useCallback(() => {
+    if (version !== 'kenji') return
+    const roll = Math.random()
+    let acc = 0
+    for (const ev of KENJI_EVENTS) {
+      acc += ev.chance
+      if (roll < acc) {
+        setCharEvent({ label: ev.label, sub: ev.sub })
+        setTimeout(() => setCharEvent(null), 3000)
+        if (ev.id === 'sun') {
+          setFrozen(true)
+          setTimeout(() => setFrozen(false), 5000)
+        }
+        if (ev.id === 'galaxy') {
+          setScoreMultiplier(2)
+          setTimeout(() => setScoreMultiplier(1), 8000)
+        }
+        if (ev.id === 'cat') {
+          // ランダムな固定ブロック1個を消す
+          setBoard(b => {
+            const nb = b.map(r => [...r])
+            const filled = []
+            nb.forEach((row, r) => row.forEach((v, c) => { if (v) filled.push([r, c]) }))
+            if (filled.length) { const [r, c] = filled[Math.floor(Math.random() * filled.length)]; nb[r][c] = null }
+            return nb
+          })
+        }
+        if (ev.id === 'rain') {
+          // ランダムにブロック1個を盤面下部に追加
+          setBoard(b => {
+            const nb = b.map(r => [...r])
+            const targetRow = ROWS - 1 - Math.floor(Math.random() * 3)
+            const targetCol = Math.floor(Math.random() * COLS)
+            if (!nb[targetRow][targetCol]) nb[targetRow][targetCol] = { color: '#8a8a4a', variant: 2 }
+            return nb
+          })
+        }
+        break
+      }
+    }
+  }, [version])
 
   const spawnPiece = useCallback((b, queue) => {
     const [nxt, ...rest] = queue
     const nn = randomPiece()
     if (collides(b, nxt.cells, nxt.x, nxt.y)) { setOver(true); return }
     setPiece(nxt); setNext([...rest, nn]); setCanHold(true)
-  }, [])
+    triggerCharEvent()
+  }, [triggerCharEvent])
 
   const lockPiece = useCallback((b, p) => {
     const nb = b.map(r => [...r])
@@ -83,38 +146,40 @@ export function useTetris() {
       if (v) { const nr = p.y + r, nc = p.x + c; if (nr >= 0) nb[nr][nc] = { color: p.color, variant: p.variant } }
     }))
     const { board: cb, count } = clearLines(nb)
-    const { combo: prevCombo, score: prevScore, lines: prevLines, level: prevLevel } = S.current
+    const { combo: prevCombo, score: prevScore, lines: prevLines, level: prevLevel, totalServed: prevServed, scoreMultiplier: mult } = S.current
     const newCombo = count > 0 ? prevCombo + 1 : 0
-    const pts = (SCORE_TABLE[count] || 0) * prevLevel + (newCombo > 1 ? newCombo * 50 : 0)
+    const newServed = prevServed + count
+    const pts = ((SCORE_TABLE[count] || 0) * prevLevel + (newCombo > 1 ? newCombo * 50 : 0)) * mult
     const newScore = prevScore + pts
     const newLines = prevLines + count
     const newLevel = Math.floor(newLines / 10) + 1
-    setBoard(cb); setScore(newScore); setLines(newLines); setLevel(newLevel); setCombo(newCombo)
+    setBoard(cb); setScore(newScore); setLines(newLines); setLevel(newLevel); setCombo(newCombo); setTotalServed(newServed)
     if (count > 0) {
       setLineFlash(true); setTimeout(() => setLineFlash(false), 320)
-      const label = COMBO_LABELS[Math.min(newCombo, 5)] || `${newCombo}杯！`
-      setComboAnim({ label, pts }); setTimeout(() => setComboAnim(null), 1800)
+      const label = getComboLabel(newServed)
+      setComboAnim({ label, pts }); setTimeout(() => setComboAnim(null), 900)
     }
     spawnPiece(cb, S.current.nextPieces)
   }, [spawnPiece])
 
   const drop = useCallback(() => {
-    const { board: b, piece: p, over: go, paused: pa } = S.current
-    if (go || pa) return
+    const { board: b, piece: p, over: go, paused: pa, frozen: fr } = S.current
+    if (go || pa || fr) return
     if (collides(b, p.cells, p.x, p.y + 1)) lockPiece(b, p)
     else setPiece(pr => ({ ...pr, y: pr.y + 1 }))
   }, [lockPiece])
 
   const hardDrop = useCallback(() => {
-    const { board: b, piece: p } = S.current
+    const { board: b, piece: p, frozen: fr } = S.current
+    if (fr) return
     const gy = ghostY(b, p.cells, p.x, p.y)
     setScore(s => s + (gy - p.y) * 2)
     lockPiece(b, { ...p, y: gy })
   }, [lockPiece])
 
   const doHold = useCallback(() => {
-    const { hold: h, piece: p, canHold: ch, board: b, nextPieces: q } = S.current
-    if (!ch) return
+    const { hold: h, piece: p, canHold: ch, board: b, nextPieces: q, frozen: fr } = S.current
+    if (!ch || fr) return
     const makeNew = (cells, color, variant, key) => {
       const np = { cells, color, variant, key, x: Math.floor(COLS / 2) - Math.floor(cells[0].length / 2), y: 0 }
       return collides(b, np.cells, np.x, np.y) ? null : np
@@ -128,11 +193,11 @@ export function useTetris() {
     }
   }, [spawnPiece])
 
-  const moveLeft  = useCallback(() => { const { board:b,piece:p,over,paused } = S.current; if(over||paused)return; if(!collides(b,p.cells,p.x-1,p.y)) setPiece(pr=>({...pr,x:pr.x-1})) }, [])
-  const moveRight = useCallback(() => { const { board:b,piece:p,over,paused } = S.current; if(over||paused)return; if(!collides(b,p.cells,p.x+1,p.y)) setPiece(pr=>({...pr,x:pr.x+1})) }, [])
+  const moveLeft  = useCallback(() => { const { board:b,piece:p,over,paused,frozen:fr } = S.current; if(over||paused||fr)return; if(!collides(b,p.cells,p.x-1,p.y)) setPiece(pr=>({...pr,x:pr.x-1})) }, [])
+  const moveRight = useCallback(() => { const { board:b,piece:p,over,paused,frozen:fr } = S.current; if(over||paused||fr)return; if(!collides(b,p.cells,p.x+1,p.y)) setPiece(pr=>({...pr,x:pr.x+1})) }, [])
 
   const rotatePiece = useCallback(() => {
-    const { board:b,piece:p,over,paused } = S.current; if(over||paused)return
+    const { board:b,piece:p,over,paused,frozen:fr } = S.current; if(over||paused||fr)return
     const rot = rotate(p.cells)
     for (const dx of [0,-1,1,-2,2]) { if(!collides(b,rot,p.x+dx,p.y)) { setPiece(pr=>({...pr,cells:rot,x:pr.x+dx})); return } }
   }, [])
@@ -140,8 +205,8 @@ export function useTetris() {
   const reset = () => {
     setBoard(emptyBoard()); setPiece(randomPiece())
     setNext([randomPiece(), randomPiece(), randomPiece()])
-    setHold(null); setCanHold(true); setScore(0); setLines(0); setCombo(0); setLevel(1)
-    setOver(false); setPaused(false); setStarted(true); setComboAnim(null)
+    setHold(null); setCanHold(true); setScore(0); setLines(0); setCombo(0); setLevel(1); setTotalServed(0)
+    setOver(false); setPaused(false); setStarted(true); setComboAnim(null); setCharEvent(null); setScoreMultiplier(1); setFrozen(false)
   }
 
   useEffect(() => {
@@ -166,8 +231,8 @@ export function useTetris() {
   }, [started, over, paused, drop, speed])
 
   return {
-    board, piece, nextPieces, hold, score, lines, combo, level,
-    over, paused, started, comboAnim, lineFlash,
+    board, piece, nextPieces, hold, score, lines, combo, level, totalServed,
+    over, paused, started, comboAnim, lineFlash, charEvent, scoreMultiplier, frozen,
     reset, drop, hardDrop, rotatePiece, doHold, moveLeft, moveRight, setPaused,
     getGhost: () => started && !over ? ghostY(board, piece.cells, piece.x, piece.y) : piece.y,
   }
