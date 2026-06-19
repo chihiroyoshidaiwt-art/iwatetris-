@@ -1,156 +1,159 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 
-export const ROWS = 22
 export const COLS = 10
+export const ROWS = 21
 
-const SHAPES = {
-  I: [[1,1,1,1]],
-  O: [[1,1],[1,1]],
-  T: [[0,1,0],[1,1,1]],
-  L: [[0,0,1],[1,1,1]],
-  J: [[1,0,0],[1,1,1]],
-  S: [[0,1,1],[1,1,0]],
-  Z: [[1,1,0],[0,1,1]],
+export const SHAPES = {
+  I: { cells: [[1,1,1,1]],         color: '#e8341a', variant: 0 },
+  O: { cells: [[1,1],[1,1]],       color: '#c8780a', variant: 1 },
+  T: { cells: [[0,1,0],[1,1,1]],   color: '#d44010', variant: 2 },
+  L: { cells: [[0,0,1],[1,1,1]],   color: '#b02010', variant: 3 },
+  J: { cells: [[1,0,0],[1,1,1]],   color: '#982010', variant: 4 },
+  S: { cells: [[0,1,1],[1,1,0]],   color: '#e05028', variant: 0 },
+  Z: { cells: [[1,1,0],[0,1,1]],   color: '#c83820', variant: 2 },
 }
-const KEYS = Object.keys(SHAPES)
+export const SHAPE_KEYS = Object.keys(SHAPES)
 
-export const rotate = s => s[0].map((_, i) => s.map(r => r[i]).reverse())
+export const COMBO_LABELS  = ['', '1杯！', '2杯！', '3杯！', '4杯！', 'わんこそば名人！']
+export const SCORE_TABLE   = [0, 100, 300, 600, 1200]
+
 export const emptyBoard = () => Array.from({ length: ROWS }, () => Array(COLS).fill(null))
+export const rotate     = m  => m[0].map((_, i) => m.map(r => r[i]).reverse())
 
-export function newPiece() {
-  const key = KEYS[Math.floor(Math.random() * KEYS.length)]
-  const shape = SHAPES[key]
-  return { key, shape, type: Math.floor(Math.random() * 5), x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: -1 }
+export function randomPiece() {
+  const key = SHAPE_KEYS[Math.floor(Math.random() * SHAPE_KEYS.length)]
+  const { cells, color, variant } = SHAPES[key]
+  return { key, cells, color, variant, x: Math.floor(COLS / 2) - Math.floor(cells[0].length / 2), y: 0 }
 }
 
-export function collides(board, shape, x, y) {
-  for (let r = 0; r < shape.length; r++)
-    for (let c = 0; c < shape[r].length; c++) {
-      if (!shape[r][c]) continue
+export function collides(board, cells, x, y) {
+  for (let r = 0; r < cells.length; r++)
+    for (let c = 0; c < cells[r].length; c++) {
+      if (!cells[r][c]) continue
       const nr = y + r, nc = x + c
-      if (nr >= ROWS || nc < 0 || nc >= COLS) return true
-      if (nr >= 0 && board[nr][nc] !== null) return true
+      if (nr >= ROWS || nc < 0 || nc >= COLS || (nr >= 0 && board[nr][nc])) return true
     }
   return false
 }
 
-export function getGhostY(board, piece) {
-  let y = piece.y
-  while (!collides(board, piece.shape, piece.x, y + 1)) y++
-  return y
+export function ghostY(board, cells, x, y) {
+  let gy = y
+  while (!collides(board, cells, x, gy + 1)) gy++
+  return gy
 }
 
 export function clearLines(board) {
   let count = 0
-  const next = []
-  for (let r = ROWS - 1; r >= 0; r--) {
-    if (board[r].every(c => c !== null)) { count++; continue }
-    next.unshift([...board[r]])
-  }
+  const next = board.filter(row => { if (row.every(c => c)) { count++; return false } return true })
   while (next.length < ROWS) next.unshift(Array(COLS).fill(null))
   return { board: next, count }
 }
 
-const SCORE_TABLE = [0, 100, 300, 600, 1000]
-const LINE_MSGS   = ['', 'わんこ完食！🍜', 'おかわり！🎉', '大盛り！✨', '特盛り！🏆']
-
 export function useTetris() {
-  const [board,   setBoard]   = useState(emptyBoard)
-  const [piece,   setPiece]   = useState(newPiece)
-  const [queue,   setQueue]   = useState(() => [newPiece(), newPiece(), newPiece(), newPiece(), newPiece()])
-  const [hold,    setHold]    = useState(null)
-  const [canHold, setCanHold] = useState(true)
-  const [score,   setScore]   = useState(0)
-  const [lines,   setLines]   = useState(0)
-  const [combo,   setCombo]   = useState(0)
-  const [over,    setOver]    = useState(false)
-  const [paused,  setPaused]  = useState(false)
-  const [started, setStarted] = useState(false)
-  const [msg,     setMsg]     = useState('')
-  const [shake,   setShake]   = useState(false)
+  const [board,       setBoard]      = useState(emptyBoard)
+  const [piece,       setPiece]      = useState(randomPiece)
+  const [nextPieces,  setNext]       = useState(() => [randomPiece(), randomPiece(), randomPiece()])
+  const [hold,        setHold]       = useState(null)
+  const [canHold,     setCanHold]    = useState(true)
+  const [score,       setScore]      = useState(0)
+  const [lines,       setLines]      = useState(0)
+  const [combo,       setCombo]      = useState(0)
+  const [level,       setLevel]      = useState(1)
+  const [over,        setOver]       = useState(false)
+  const [paused,      setPaused]     = useState(false)
+  const [started,     setStarted]    = useState(false)
+  const [comboAnim,   setComboAnim]  = useState(null)
+  const [lineFlash,   setLineFlash]  = useState(false)
 
-  const S = useRef({ board, piece, queue, over, paused, started, canHold, hold, combo })
-  useEffect(() => { S.current = { board, piece, queue, over, paused, started, canHold, hold, combo } })
+  const S = useRef({})
+  useEffect(() => { S.current = { board, piece, nextPieces, hold, canHold, score, lines, combo, level, over, paused, started } })
 
-  const level = Math.floor(lines / 10) + 1
-  const speed = Math.max(80, 600 - level * 40)
-  const flash = m => { setMsg(m); setTimeout(() => setMsg(''), 1500) }
+  const speed = Math.max(80, 900 - (level - 1) * 80)
 
-  const spawn = useCallback((b, q) => {
-    const [nxt, ...rest] = q
-    const nn = newPiece()
-    if (collides(b, nxt.shape, nxt.x, nxt.y)) { setOver(true); return }
-    setPiece(nxt); setQueue([...rest, nn]); setCanHold(true)
+  const spawnPiece = useCallback((b, queue) => {
+    const [nxt, ...rest] = queue
+    const nn = randomPiece()
+    if (collides(b, nxt.cells, nxt.x, nxt.y)) { setOver(true); return }
+    setPiece(nxt); setNext([...rest, nn]); setCanHold(true)
   }, [])
 
-  const lock = useCallback((b, p) => {
+  const lockPiece = useCallback((b, p) => {
     const nb = b.map(r => [...r])
-    for (let r = 0; r < p.shape.length; r++)
-      for (let c = 0; c < p.shape[r].length; c++) {
-        if (!p.shape[r][c]) continue
-        const nr = p.y + r, nc = p.x + c
-        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) nb[nr][nc] = p.type
-      }
-    const { board: cb, count: n } = clearLines(nb)
-    const nc2 = n > 0 ? S.current.combo + 1 : 0
-    const bonus = nc2 > 1 ? nc2 * 50 : 0
-    setScore(s => s + (SCORE_TABLE[n] || 0) + bonus)
-    setLines(l => l + n); setCombo(nc2); setBoard(cb)
-    if (n > 0) { flash(nc2 > 1 ? `🔥${nc2}コンボ！` : (LINE_MSGS[n] || '')); setShake(true); setTimeout(() => setShake(false), 280) }
-    spawn(cb, S.current.queue)
-  }, [spawn])
+    p.cells.forEach((row, r) => row.forEach((v, c) => {
+      if (v) { const nr = p.y + r, nc = p.x + c; if (nr >= 0) nb[nr][nc] = { color: p.color, variant: p.variant } }
+    }))
+    const { board: cb, count } = clearLines(nb)
+    const { combo: prevCombo, score: prevScore, lines: prevLines, level: prevLevel } = S.current
+    const newCombo = count > 0 ? prevCombo + 1 : 0
+    const pts = (SCORE_TABLE[count] || 0) * prevLevel + (newCombo > 1 ? newCombo * 50 : 0)
+    const newScore = prevScore + pts
+    const newLines = prevLines + count
+    const newLevel = Math.floor(newLines / 10) + 1
+    setBoard(cb); setScore(newScore); setLines(newLines); setLevel(newLevel); setCombo(newCombo)
+    if (count > 0) {
+      setLineFlash(true); setTimeout(() => setLineFlash(false), 320)
+      const label = COMBO_LABELS[Math.min(newCombo, 5)] || `${newCombo}杯！`
+      setComboAnim({ label, pts }); setTimeout(() => setComboAnim(null), 1800)
+    }
+    spawnPiece(cb, S.current.nextPieces)
+  }, [spawnPiece])
 
   const drop = useCallback(() => {
-    const { board: b, piece: p } = S.current
-    if (collides(b, p.shape, p.x, p.y + 1)) lock(b, p)
+    const { board: b, piece: p, over: go, paused: pa } = S.current
+    if (go || pa) return
+    if (collides(b, p.cells, p.x, p.y + 1)) lockPiece(b, p)
     else setPiece(pr => ({ ...pr, y: pr.y + 1 }))
-  }, [lock])
+  }, [lockPiece])
 
   const hardDrop = useCallback(() => {
     const { board: b, piece: p } = S.current
-    const gy = getGhostY(b, p)
-    setScore(s => s + (gy - p.y) * 2); lock(b, { ...p, y: gy })
-  }, [lock])
-
-  const rotatePiece = useCallback(() => {
-    const { board: b, piece: p } = S.current
-    const rot = rotate(p.shape)
-    for (const dx of [0, -1, 1, -2, 2]) {
-      if (!collides(b, rot, p.x + dx, p.y)) { setPiece(pr => ({ ...pr, shape: rot, x: pr.x + dx })); return }
-    }
-  }, [])
+    const gy = ghostY(b, p.cells, p.x, p.y)
+    setScore(s => s + (gy - p.y) * 2)
+    lockPiece(b, { ...p, y: gy })
+  }, [lockPiece])
 
   const doHold = useCallback(() => {
-    const { canHold: ch, piece: p, board: b, queue: q } = S.current
+    const { hold: h, piece: p, canHold: ch, board: b, nextPieces: q } = S.current
     if (!ch) return
-    const cur = { ...newPiece(), shape: p.shape, type: p.type, key: p.key }
-    if (S.current.hold) {
-      const res = { ...newPiece(), shape: S.current.hold.shape, type: S.current.hold.type, key: S.current.hold.key }
-      if (!collides(b, res.shape, res.x, res.y)) { setPiece(res); setHold(cur); setCanHold(false) }
-    } else { setHold(cur); spawn(b, q); setCanHold(false) }
-  }, [spawn])
+    const makeNew = (cells, color, variant, key) => {
+      const np = { cells, color, variant, key, x: Math.floor(COLS / 2) - Math.floor(cells[0].length / 2), y: 0 }
+      return collides(b, np.cells, np.x, np.y) ? null : np
+    }
+    if (h) {
+      const np = makeNew(h.cells, h.color, h.variant, h.key)
+      if (np) { setHold({ cells: p.cells, color: p.color, variant: p.variant, key: p.key }); setPiece(np); setCanHold(false) }
+    } else {
+      setHold({ cells: p.cells, color: p.color, variant: p.variant, key: p.key })
+      spawnPiece(b, q); setCanHold(false)
+    }
+  }, [spawnPiece])
 
-  const moveLeft  = useCallback(() => { const { board: b, piece: p } = S.current; if (!collides(b, p.shape, p.x - 1, p.y)) setPiece(pr => ({ ...pr, x: pr.x - 1 })) }, [])
-  const moveRight = useCallback(() => { const { board: b, piece: p } = S.current; if (!collides(b, p.shape, p.x + 1, p.y)) setPiece(pr => ({ ...pr, x: pr.x + 1 })) }, [])
+  const moveLeft  = useCallback(() => { const { board:b,piece:p,over,paused } = S.current; if(over||paused)return; if(!collides(b,p.cells,p.x-1,p.y)) setPiece(pr=>({...pr,x:pr.x-1})) }, [])
+  const moveRight = useCallback(() => { const { board:b,piece:p,over,paused } = S.current; if(over||paused)return; if(!collides(b,p.cells,p.x+1,p.y)) setPiece(pr=>({...pr,x:pr.x+1})) }, [])
+
+  const rotatePiece = useCallback(() => {
+    const { board:b,piece:p,over,paused } = S.current; if(over||paused)return
+    const rot = rotate(p.cells)
+    for (const dx of [0,-1,1,-2,2]) { if(!collides(b,rot,p.x+dx,p.y)) { setPiece(pr=>({...pr,cells:rot,x:pr.x+dx})); return } }
+  }, [])
 
   const reset = () => {
-    setBoard(emptyBoard()); setPiece(newPiece())
-    setQueue([newPiece(), newPiece(), newPiece(), newPiece(), newPiece()])
-    setHold(null); setCanHold(true); setScore(0); setLines(0); setCombo(0)
-    setOver(false); setPaused(false); setStarted(true)
+    setBoard(emptyBoard()); setPiece(randomPiece())
+    setNext([randomPiece(), randomPiece(), randomPiece()])
+    setHold(null); setCanHold(true); setScore(0); setLines(0); setCombo(0); setLevel(1)
+    setOver(false); setPaused(false); setStarted(true); setComboAnim(null)
   }
 
   useEffect(() => {
     const h = e => {
-      const { started: st, over: go, paused: pa } = S.current
-      if (e.key === 'p' || e.key === 'P') { setPaused(v => !v); return }
-      if (!st || go || pa) return
-      if      (e.key === 'ArrowLeft')  moveLeft()
-      else if (e.key === 'ArrowRight') moveRight()
-      else if (e.key === 'ArrowDown')  drop()
-      else if (e.key === 'ArrowUp')    rotatePiece()
-      else if (e.key === ' ')          { e.preventDefault(); hardDrop() }
-      else if (e.key === 'c' || e.key === 'C') doHold()
+      if (!S.current.started || S.current.over) return
+      if (e.key==='ArrowLeft')  { e.preventDefault(); moveLeft()     }
+      if (e.key==='ArrowRight') { e.preventDefault(); moveRight()    }
+      if (e.key==='ArrowDown')  { e.preventDefault(); drop()         }
+      if (e.key==='ArrowUp')    { e.preventDefault(); rotatePiece()  }
+      if (e.key===' ')          { e.preventDefault(); hardDrop()     }
+      if (e.key==='c'||e.key==='C') doHold()
+      if (e.key==='p'||e.key==='P') setPaused(v=>!v)
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
@@ -162,5 +165,10 @@ export function useTetris() {
     return () => clearInterval(t)
   }, [started, over, paused, drop, speed])
 
-  return { board, piece, queue, hold, score, lines, level, combo, over, paused, started, msg, shake, reset, drop, hardDrop, rotatePiece, doHold, moveLeft, moveRight, setPaused, getGhost: () => started && !over ? getGhostY(board, piece) : piece.y }
+  return {
+    board, piece, nextPieces, hold, score, lines, combo, level,
+    over, paused, started, comboAnim, lineFlash,
+    reset, drop, hardDrop, rotatePiece, doHold, moveLeft, moveRight, setPaused,
+    getGhost: () => started && !over ? ghostY(board, piece.cells, piece.x, piece.y) : piece.y,
+  }
 }

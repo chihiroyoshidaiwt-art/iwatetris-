@@ -1,213 +1,280 @@
 import { useState, useEffect } from 'react'
-import WankoSVG, { MiniPiece, WANKO_TYPES } from '../components/WankoSVG.jsx'
-import { useTetris, ROWS, COLS } from '../hooks/useTetris.js'
-import { useConfig } from '../hooks/useConfig.js'
+import Background          from '../components/Background.jsx'
+import { WankoBlock, MiniPiece } from '../components/WankoBlock.jsx'
+import StoneBtn            from '../components/StoneBtn.jsx'
+import { useTetris, COLS, ROWS, SHAPES, SHAPE_KEYS } from '../hooks/useTetris.js'
+import { useConfig }       from '../hooks/useConfig.js'
+
+const VERSIONS = {
+  fujiwara:   { name:'藤原清衡',   color:'#c8a020', emoji:'👑' },
+  yoshitsune: { name:'源義経',     color:'#4080c0', emoji:'⚔️' },
+  hara:       { name:'原敬',       color:'#208040', emoji:'🏛️' },
+  nitobe:     { name:'新渡戸稲造', color:'#8040c0', emoji:'📚' },
+  kenji:      { name:'宮沢賢治',   color:'#2060c0', emoji:'🌌' },
+  takuboku:   { name:'石川啄木',   color:'#804020', emoji:'📝' },
+  yokosawa:   { name:'横沢たかひろ',color:'#c04080', emoji:'😄' },
+}
 
 export default function GameScreen({ version, onBack }) {
-  const g = useTetris()
+  const ver = VERSIONS[version] || VERSIONS.kenji
+  const g   = useTetris()
   const { config } = useConfig()
   const isMobile = window.innerWidth < 768
 
-  const [layout, setLayout] = useState({ cell: 0, boardX: 0, boardY: 0, boardW: 0, boardH: 0, frameX: 0, frameY: 0, frameSize: 0, sideW: 0 })
+  // Layout calculation
+  const [layout, setLayout] = useState({ cell:0, boardX:0, boardY:0, boardW:0, boardH:0, frameX:0, frameY:0, frameW:0, frameH:0, sideW:0 })
 
   useEffect(() => {
     const calc = () => {
       const vw = window.innerWidth, vh = window.innerHeight
-      const LOGO_H = 48, BTN_H = 145, PAD = 6
-      const SIDE_W = Math.max(72, Math.floor(vw * 0.20))
-      const availW = vw - SIDE_W * 2 - PAD * 2
-      const availH = vh - LOGO_H - BTN_H - PAD * 2
-      const frameSize = Math.min(availW, availH * 0.96)
-      const iL = frameSize * config.innerLeft
-      const iT = frameSize * config.innerTop
-      const iW = frameSize * config.innerW
-      const iH = frameSize * config.innerH
-      const cell = Math.max(10, Math.min(Math.floor(iW / COLS), Math.floor(iH / ROWS)))
-      const boardW = cell * COLS, boardH = cell * ROWS
-      const frameX = SIDE_W + PAD + (availW - frameSize) / 2
-      const frameY = LOGO_H + PAD + (availH - frameSize) / 2
-      const boardX = frameX + iL + (iW - boardW) / 2
-      const boardY = frameY + iT + (iH - boardH) / 2
-      setLayout({ cell, boardX, boardY, boardW, boardH, frameX, frameY, frameSize, sideW: SIDE_W })
-    }
-    calc(); window.addEventListener('resize', calc)
-    return () => window.removeEventListener('resize', calc)
-  }, [config])
+      const TOP_H   = 48
+      const BOT_H   = isMobile ? 148 : 60
+      const CHAR_H  = 52
+      const SIDE_W  = Math.max(80, Math.floor(vw * 0.185))
+      const PAD     = 8
 
-  const { cell, boardX, boardY, boardW, boardH, frameX, frameY, frameSize, sideW } = layout
+      const availW  = vw - SIDE_W * 2 - PAD * 2
+      const availH  = vh - TOP_H - BOT_H - CHAR_H - PAD * 2
+
+      // Frame is square (512x512 original)
+      const frameSize = Math.min(availW, availH * 0.98)
+
+      // Grid inside frame (based on admin config)
+      const iL = frameSize * (config.innerLeft || 0.28)
+      const iT = frameSize * (config.innerTop  || 0.10)
+      const iW = frameSize * (config.innerW    || 0.44)
+      const iH = frameSize * (config.innerH    || 0.72)
+
+      const cellByW = Math.floor(iW / COLS)
+      const cellByH = Math.floor(iH / ROWS)
+      const cell    = Math.max(10, Math.min(cellByW, cellByH))
+      const boardW  = cell * COLS
+      const boardH  = cell * ROWS
+
+      const frameX  = SIDE_W + PAD + (availW - frameSize) / 2
+      const frameY  = TOP_H  + PAD + (availH - frameSize) / 2
+      const boardX  = frameX + iL + (iW - boardW) / 2
+      const boardY  = frameY + iT + (iH - boardH) / 2
+
+      setLayout({ cell, boardX, boardY, boardW, boardH, frameX, frameY, frameW:frameSize, frameH:frameSize, sideW:SIDE_W })
+    }
+    calc()
+    window.addEventListener('resize', calc)
+    return () => window.removeEventListener('resize', calc)
+  }, [config, isMobile])
+
+  const { cell, boardX, boardY, boardW, boardH, frameX, frameY, frameW, frameH, sideW } = layout
   const ghostY = g.getGhost()
 
-  const Btn = ({ onClick, color, label, flex = 1, h = 46, fs = 18 }) => (
-    <div onClick={onClick}
-      onTouchStart={e => { e.currentTarget.style.transform = 'scale(0.88)'; e.currentTarget.style.opacity = '.65' }}
-      onTouchEnd={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.opacity = ''; onClick() }}
-      style={{ flex, height: h, borderRadius: 10, background: 'rgba(5,15,45,.92)', border: `2px solid ${color}66`, color, fontSize: fs, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', WebkitTapHighlightColor: 'transparent', boxShadow: `0 2px 10px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08)`, fontFamily: 'inherit', backdropFilter: 'blur(6px)' }}>
+  // Game button
+  const GBtn = ({ label, onClick, color='#c8a060', flex=1, fs=22 }) => (
+    <div
+      onClick={onClick}
+      onTouchStart={e => { e.currentTarget.style.opacity='0.55'; e.currentTarget.style.transform='scale(0.9)' }}
+      onTouchEnd={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform=''; onClick() }}
+      style={{ flex, height:isMobile?54:48, borderRadius:10, background:'linear-gradient(160deg,#2e2414,#1a1008)', border:`2px solid ${color}55`, color, fontSize:fs, fontWeight:900, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', userSelect:'none', WebkitTapHighlightColor:'transparent', boxShadow:`0 4px 0 rgba(0,0,0,0.7),0 0 12px ${color}18`, fontFamily:'inherit' }}>
       {label}
     </div>
   )
 
   const StatBox = ({ label, value, color, sub }) => (
-    <div style={{ background: 'rgba(5,15,45,.88)', border: `1px solid ${color}30`, borderLeft: `2.5px solid ${color}`, borderRadius: 8, padding: '5px 8px', backdropFilter: 'blur(8px)' }}>
-      <div style={{ fontSize: 'clamp(7px,1.5vw,9px)', color: `${color}88`, fontWeight: 700, letterSpacing: 1.5 }}>{label}</div>
-      <div style={{ fontSize: 'clamp(14px,3.5vw,22px)', fontWeight: 900, color, lineHeight: 1.15 }}>
-        {value}{sub && <span style={{ fontSize: 'clamp(9px,1.8vw,11px)', color: '#446', fontWeight: 400 }}>{sub}</span>}
+    <div style={{ background:'rgba(5,10,35,0.9)', border:`1px solid ${color}30`, borderLeft:`3px solid ${color}`, borderRadius:8, padding:'6px 8px', backdropFilter:'blur(8px)' }}>
+      <div style={{ fontSize:'clamp(7px,1.4vw,9px)', color:`${color}88`, fontWeight:700, letterSpacing:1.5 }}>{label}</div>
+      <div style={{ fontSize:'clamp(16px,3.5vw,24px)', fontWeight:900, color, lineHeight:1.1 }}>
+        {value}{sub && <span style={{ fontSize:'clamp(9px,1.6vw,11px)', color:'#446', fontWeight:400 }}>{sub}</span>}
       </div>
     </div>
   )
 
   return (
-    <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', fontFamily: "'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif", color: '#fff', userSelect: 'none', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <div style={{ width:'100vw', height:'100vh', overflow:'hidden', fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif", color:'#fff', userSelect:'none', paddingTop:'env(safe-area-inset-top)', paddingBottom:'env(safe-area-inset-bottom)' }}>
       <style>{`
         *{box-sizing:border-box;}
-        @keyframes msgUp{0%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(-70px) scale(1.1)}}
-        @keyframes bshake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
-        @keyframes cpop{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+        @keyframes comboAppear{0%{opacity:0;transform:translateX(-50%) scale(0.5)}15%{opacity:1;transform:translateX(-50%) scale(1.15)}30%{transform:translateX(-50%) scale(1)}70%{opacity:1}100%{opacity:0;transform:translateX(-50%) scale(0.9) translateY(-28px)}}
+        @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
         @keyframes logoF{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
-        @keyframes twinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:1;transform:scale(1.4)}}
-        @keyframes shoot{0%{transform:translateX(0) translateY(0);opacity:1}100%{transform:translateX(400px) translateY(200px);opacity:0}}
       `}</style>
 
-      {/* 背景 */}
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, backgroundImage: `url(/assets/${isMobile ? 'bg_sp' : 'bg_pc'}.webp)`, backgroundSize: 'cover', backgroundPosition: 'center bottom' }} />
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, background: 'rgba(0,5,20,0.5)' }} />
+      <Background mobile={isMobile} />
 
-      {/* 星 */}
-      {Array.from({ length: 40 }, (_, i) => (
-        <div key={i} style={{ position: 'fixed', zIndex: 1, pointerEvents: 'none', left: `${Math.random() * 100}%`, top: `${Math.random() * 80}%`, width: Math.random() * 2 + 0.5, height: Math.random() * 2 + 0.5, borderRadius: '50%', background: '#fff', animation: `twinkle ${2 + Math.random() * 4}s ${Math.random() * 5}s infinite`, opacity: 0.3 }} />
-      ))}
+      {/* Iwate Frame */}
+      {frameW > 0 && (
+        <img src="/assets/frame.webp" alt="" style={{ position:'fixed', left:frameX, top:frameY, width:frameW, height:frameH, zIndex:2, pointerEvents:'none', objectFit:'contain' }} />
+      )}
 
-      {/* 枠 */}
-      {frameSize > 0 && <img src="/assets/frame.webp" alt="" style={{ position: 'fixed', left: frameX, top: frameY, width: frameSize, height: frameSize, zIndex: 2, pointerEvents: 'none', objectFit: 'contain' }} />}
-
-      {/* グリッド背景 */}
-      {cell > 0 && <div style={{ position: 'fixed', left: boardX, top: boardY, width: boardW, height: boardH, zIndex: 3, pointerEvents: 'none', background: 'rgba(2,6,20,0.86)', backgroundImage: `linear-gradient(rgba(20,50,120,.4) 1px,transparent 1px),linear-gradient(90deg,rgba(20,50,120,.4) 1px,transparent 1px)`, backgroundSize: `${cell}px ${cell}px` }} />}
-
-      {/* ブロック */}
+      {/* Grid background */}
       {cell > 0 && (
-        <div style={{ position: 'fixed', left: boardX, top: boardY, width: boardW, height: boardH, zIndex: 4, overflow: 'hidden', animation: g.shake ? 'bshake .28s' : 'none' }}>
-          {g.started && !g.over && g.piece.shape.map((row, r) => row.map((v, c) => {
+        <div style={{ position:'fixed', left:boardX, top:boardY, width:boardW, height:boardH, zIndex:3, pointerEvents:'none', background:'rgba(1,4,18,0.9)', backgroundImage:`linear-gradient(rgba(30,60,140,.38) 1px,transparent 1px),linear-gradient(90deg,rgba(30,60,140,.38) 1px,transparent 1px)`, backgroundSize:`${cell}px ${cell}px` }} />
+      )}
+
+      {/* Blocks */}
+      {cell > 0 && (
+        <div style={{ position:'fixed', left:boardX, top:boardY, width:boardW, height:boardH, zIndex:4, overflow:'hidden', animation: g.lineFlash ? 'shake .28s' : 'none' }}>
+          {/* Ghost */}
+          {g.started && !g.over && g.piece.cells.map((row,r) => row.map((v,c) => {
             if (!v) return null
             const nr = ghostY + r, nc = g.piece.x + c
             if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) return null
-            return <div key={`g${r}-${c}`} style={{ position: 'absolute', top: nr * cell, left: nc * cell, width: cell, height: cell, opacity: .15, border: '1px dashed rgba(245,200,66,.4)', boxSizing: 'border-box' }}><WankoSVG type={g.piece.type} size={cell} /></div>
+            return <div key={`gh${r}-${c}`} style={{ position:'absolute', top:nr*cell, left:nc*cell, width:cell, height:cell, border:`2px dashed ${g.piece.color}38`, boxSizing:'border-box' }} />
           }))}
-          {g.board.map((row, r) => row.map((val, c) => {
-            if (val === null) return null
-            return <div key={`b${r}-${c}`} style={{ position: 'absolute', top: r * cell, left: c * cell, width: cell, height: cell, border: '1.5px solid rgba(200,160,60,.5)', boxSizing: 'border-box', overflow: 'hidden' }}><WankoSVG type={val} size={cell} /></div>
+          {/* Fixed blocks */}
+          {g.board.map((row,r) => row.map((val,c) => {
+            if (!val) return null
+            return (
+              <div key={`b${r}-${c}`} style={{ position:'absolute', top:r*cell, left:c*cell, width:cell, height:cell, border:`1px solid ${val.color}55`, boxSizing:'border-box', overflow:'hidden', background: g.lineFlash ? `${val.color}44` : 'transparent' }}>
+                <WankoBlock size={cell} variant={val.variant||0} />
+              </div>
+            )
           }))}
-          {g.started && !g.over && g.piece.shape.map((row, r) => row.map((v, c) => {
+          {/* Active piece */}
+          {g.started && !g.over && g.piece.cells.map((row,r) => row.map((v,c) => {
             if (!v) return null
             const nr = g.piece.y + r, nc = g.piece.x + c
             if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) return null
-            return <div key={`p${r}-${c}`} style={{ position: 'absolute', top: nr * cell, left: nc * cell, width: cell, height: cell, border: '1.5px solid rgba(245,200,66,.9)', boxSizing: 'border-box', overflow: 'hidden', boxShadow: '0 0 8px rgba(245,200,66,.4)' }}><WankoSVG type={g.piece.type} size={cell} /></div>
+            return (
+              <div key={`p${r}-${c}`} style={{ position:'absolute', top:nr*cell, left:nc*cell, width:cell, height:cell, border:`1.5px solid ${g.piece.color}`, boxSizing:'border-box', overflow:'hidden', boxShadow:`0 0 10px ${g.piece.color}66,inset 0 1px 0 rgba(255,255,255,0.15)` }}>
+                <WankoBlock size={cell} variant={g.piece.variant||0} />
+              </div>
+            )
           }))}
+          {/* Line flash */}
+          {g.lineFlash && <div style={{ position:'absolute', inset:0, background:'rgba(255,210,80,0.14)', pointerEvents:'none' }} />}
         </div>
       )}
 
-      {/* UI層 */}
-      <div style={{ position: 'fixed', inset: 0, zIndex: 6, display: 'flex', flexDirection: 'column', pointerEvents: 'none' }}>
-        {/* ロゴ行 */}
-        <div style={{ height: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', pointerEvents: 'auto' }}>
-          <img src="/assets/logo.webp" alt="イワテトリス" style={{ height: 34, width: 'auto', maxWidth: '50vw', objectFit: 'contain', objectPosition: 'left', filter: 'drop-shadow(0 2px 8px rgba(0,0,0,.9))', animation: 'logoF 3s ease-in-out infinite' }} />
-          <div style={{ display: 'flex', gap: 6 }}>
-            <div onClick={onBack} style={{ height: 30, padding: '0 10px', borderRadius: 7, background: 'rgba(5,15,45,.88)', border: '1px solid rgba(100,140,220,.4)', display: 'flex', alignItems: 'center', fontSize: 11, cursor: 'pointer', color: '#7eb8f7', backdropFilter: 'blur(6px)' }}>← 戻る</div>
-            {g.started && !g.over && <div onClick={() => g.setPaused(v => !v)} style={{ width: 30, height: 30, borderRadius: 7, background: 'rgba(5,15,45,.88)', border: '1px solid rgba(100,140,220,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, cursor: 'pointer', color: '#7eb8f7' }}>{g.paused ? '▶' : '⏸'}</div>}
+      {/* UI Layer */}
+      <div style={{ position:'fixed', inset:0, zIndex:6, display:'flex', flexDirection:'column', pointerEvents:'none' }}>
+        {/* Top bar */}
+        <div style={{ height:48, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 12px', background:'rgba(0,3,18,0.82)', borderBottom:'1px solid rgba(80,120,200,0.28)', backdropFilter:'blur(10px)', pointerEvents:'auto' }}>
+          <div onClick={onBack} style={{ fontSize:13, color:'#7090c0', cursor:'pointer', padding:'4px 12px', border:'1px solid rgba(100,140,200,0.3)', borderRadius:6, background:'rgba(10,20,60,0.6)' }}>← 戻る</div>
+          <div style={{ display:'flex', gap:isMobile?10:20, fontSize:isMobile?11:13, fontWeight:700 }}>
+            <span style={{ color:'#f0c040' }}>SCORE <span style={{ fontSize:isMobile?14:18 }}>{g.score.toLocaleString()}</span></span>
+            <span style={{ color:'#80c0ff' }}>Lv.<span style={{ fontSize:isMobile?14:18 }}>{g.level}</span></span>
+            <span style={{ color:'#80e0a0' }}>LINE <span style={{ fontSize:isMobile?12:16 }}>{g.lines}</span></span>
+          </div>
+          <div onClick={() => g.started && !g.over && g.setPaused(v=>!v)} style={{ fontSize:18, cursor:'pointer', color:'#607090', width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'auto' }}>
+            {g.paused ? '▶' : '⏸'}
           </div>
         </div>
 
-        {/* コンテンツ */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'stretch', minHeight: 0 }}>
-          {/* 左：HOLD＋ステータス */}
+        {/* Main row */}
+        <div style={{ flex:1, display:'flex', alignItems:'stretch', minHeight:0 }}>
+          {/* Left: HOLD + stats */}
           {sideW > 0 && (
-            <div style={{ width: sideW, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 5, padding: '5px 4px 5px 8px' }}>
-              {/* HOLD */}
-              <div style={{ background: 'rgba(5,15,45,.88)', border: '1px solid rgba(100,140,220,.3)', borderLeft: '2.5px solid #7eb8f7', borderRadius: 8, padding: '5px 7px', backdropFilter: 'blur(8px)' }}>
-                <div style={{ fontSize: 'clamp(7px,1.5vw,9px)', color: '#7eb8f788', fontWeight: 700, letterSpacing: 1.5, marginBottom: 3 }}>🧊 HOLD</div>
-                {g.hold ? (
-                  <MiniPiece shape={g.hold.shape} type={g.hold.type} cell={Math.max(10, Math.floor(sideW * .26))} />
-                ) : (
-                  <div style={{ height: 24, display: 'flex', alignItems: 'center', fontSize: 10, color: '#335', opacity: .5 }}>空</div>
-                )}
+            <div style={{ width:sideW, flexShrink:0, display:'flex', flexDirection:'column', gap:6, padding:'8px 6px 6px 10px' }}>
+              <div style={{ background:'rgba(5,10,35,0.9)', border:'1px solid rgba(100,150,220,0.3)', borderLeft:'3px solid #7eb8f7', borderRadius:8, padding:'7px 8px', backdropFilter:'blur(8px)' }}>
+                <div style={{ fontSize:'clamp(7px,1.4vw,9px)', color:'#7eb8f788', fontWeight:700, letterSpacing:1.5, marginBottom:5 }}>🧊 冷蔵庫</div>
+                <div style={{ display:'flex', justifyContent:'center' }}>
+                  <MiniPiece p={g.hold} size={Math.max(12, Math.floor(sideW*0.25))} />
+                </div>
               </div>
               <StatBox label="スコア" value={g.score.toLocaleString()} color="#f5c842" />
               <StatBox label="レベル" value={g.level} color="#7eb8f7" />
-              <StatBox label="ライン" value={g.lines} color="#88ffaa" sub="/40" />
+              <StatBox label="ライン" value={g.lines} color="#80e0a0" />
               {g.combo > 1 && (
-                <div style={{ background: 'linear-gradient(135deg,rgba(220,60,0,.9),rgba(160,0,60,.88))', borderRadius: 8, padding: '5px 7px', textAlign: 'center', animation: 'cpop .45s infinite', border: '1px solid rgba(255,100,50,.3)' }}>
-                  <div style={{ fontSize: 'clamp(7px,1.5vw,9px)', color: 'rgba(255,200,150,.9)', fontWeight: 700 }}>コンボ</div>
-                  <div style={{ fontSize: 'clamp(16px,4vw,24px)', fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>{g.combo}</div>
+                <div style={{ background:'linear-gradient(135deg,rgba(220,60,0,.9),rgba(160,0,60,.88))', borderRadius:8, padding:'6px 8px', textAlign:'center', border:'1px solid rgba(255,100,50,.3)' }}>
+                  <div style={{ fontSize:'clamp(7px,1.4vw,9px)', color:'rgba(255,200,150,.9)', fontWeight:700 }}>コンボ</div>
+                  <div style={{ fontSize:'clamp(18px,4vw,26px)', fontWeight:900, color:'#fff', lineHeight:1.1 }}>{g.combo}</div>
                 </div>
               )}
             </div>
           )}
 
-          <div style={{ flex: 1 }} />
+          <div style={{ flex:1 }} />
 
-          {/* 右：NEXT */}
+          {/* Right: NEXT */}
           {sideW > 0 && (
-            <div style={{ width: sideW, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, padding: '5px 8px 5px 4px' }}>
-              <div style={{ fontSize: 'clamp(7px,1.5vw,9px)', color: 'rgba(245,200,66,.8)', fontWeight: 700, letterSpacing: 1, marginBottom: 2 }}>次の冷麺</div>
-              {g.queue.slice(0, 5).map((q, i) => {
-                const nc = Math.max(9, Math.floor(sideW * .27))
-                return (
-                  <div key={i} style={{ background: 'rgba(5,15,45,.88)', border: '1px solid rgba(245,200,66,.25)', borderRadius: 7, padding: '3px 5px', backdropFilter: 'blur(6px)' }}>
-                    <div style={{ fontSize: 'clamp(6px,1.3vw,8px)', color: 'rgba(245,200,66,.75)', fontWeight: 700, marginBottom: 2 }}>{WANKO_TYPES[q.type].name}</div>
-                    <MiniPiece shape={q.shape} type={q.type} cell={nc} />
-                  </div>
-                )
-              })}
+            <div style={{ width:sideW, flexShrink:0, display:'flex', flexDirection:'column', gap:5, padding:'8px 10px 6px 6px' }}>
+              <div style={{ background:'rgba(5,10,35,0.9)', border:'1px solid rgba(200,150,60,0.3)', borderRadius:8, padding:'7px 6px', backdropFilter:'blur(8px)' }}>
+                <div style={{ fontSize:'clamp(7px,1.4vw,9px)', color:'rgba(200,150,60,0.85)', fontWeight:700, letterSpacing:1, marginBottom:6, textAlign:'center' }}>次の冷麺</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {g.nextPieces.map((p,i) => {
+                    const nc = Math.max(12, Math.floor(sideW*(i===0?0.28:0.22)))
+                    return (
+                      <div key={i} style={{ display:'flex', justifyContent:'center', opacity:i===0?1:0.55 }}>
+                        <MiniPiece p={p} size={nc} />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           )}
         </div>
 
-        {/* ボタン */}
-        <div style={{ flexShrink: 0, height: 145, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, padding: '0 10px', background: 'rgba(0,5,20,.94)', borderTop: '1px solid rgba(80,120,200,.25)', backdropFilter: 'blur(14px)', pointerEvents: 'auto' }}>
-          <div style={{ display: 'flex', gap: 7 }}>
-            <Btn onClick={() => g.doHold()}      color="#7eb8f7" label="HOLD"   flex={1}   h={46} fs={13} />
-            <Btn onClick={() => g.rotatePiece()} color="#f5c842" label="↑ 回転" flex={1.4} h={46} fs={14} />
-            <Btn onClick={() => g.hardDrop()}    color="#ff9955" label="DROP"   flex={1}   h={46} fs={13} />
+        {/* Character panel */}
+        <div style={{ flexShrink:0, height:52, display:'flex', alignItems:'center', gap:12, padding:'0 14px', background:'rgba(0,3,14,0.88)', borderTop:'1px solid rgba(60,90,160,0.25)', backdropFilter:'blur(8px)', pointerEvents:'auto' }}>
+          <div style={{ width:36, height:36, borderRadius:8, background:`${ver.color}20`, border:`1px solid ${ver.color}50`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{ver.emoji}</div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:ver.color }}>{ver.name}</div>
+            <div style={{ fontSize:10, color:'#446' }}>特殊イベント待機中...</div>
           </div>
-          <div style={{ display: 'flex', gap: 7 }}>
-            <Btn onClick={() => g.moveLeft()}  color="#a8d8e8" label="◀" flex={1.2} h={52} fs={24} />
-            <Btn onClick={() => g.drop()}      color="#7eb8f7" label="↓" flex={1}   h={52} fs={24} />
-            <Btn onClick={() => g.moveRight()} color="#a8d8e8" label="▶" flex={1.2} h={52} fs={24} />
+        </div>
+
+        {/* Buttons */}
+        <div style={{ flexShrink:0, padding:'8px 10px 10px', background:'rgba(0,2,12,0.94)', borderTop:'1px solid rgba(60,90,160,0.28)', display:'flex', flexDirection:'column', gap:7, pointerEvents:'auto' }}>
+          <div style={{ display:'flex', gap:7 }}>
+            <GBtn label="🧊"    onClick={g.doHold}      color="#7eb8f7" flex={1}   fs={22} />
+            <GBtn label="↑ 回転" onClick={g.rotatePiece} color="#f5c842" flex={1.6} fs={15} />
+            <GBtn label="DROP"  onClick={g.hardDrop}    color="#e06030" flex={1.2} fs={14} />
+          </div>
+          <div style={{ display:'flex', gap:7 }}>
+            <GBtn label="◀" onClick={g.moveLeft}  color="#80d8b0" flex={1.2} fs={26} />
+            <GBtn label="▼" onClick={g.drop}       color="#6090e0" flex={1}   fs={26} />
+            <GBtn label="▶" onClick={g.moveRight} color="#80d8b0" flex={1.2} fs={26} />
           </div>
         </div>
       </div>
 
-      {/* メッセージ */}
-      {g.msg && <div style={{ position: 'fixed', top: '40%', left: '50%', zIndex: 10, fontSize: 'clamp(16px,4vw,24px)', fontWeight: 900, color: '#f5c842', textShadow: '0 0 18px #f5c84288,0 2px 5px rgba(0,0,0,.95)', animation: 'msgUp 1.5s forwards', whiteSpace: 'nowrap', pointerEvents: 'none' }}>{g.msg}</div>}
-
-      {/* スタート */}
-      {!g.started && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,5,20,.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-          <img src="/assets/logo.webp" alt="" style={{ height: 'clamp(52px,13vw,80px)', width: 'auto', maxWidth: '80vw', objectFit: 'contain', filter: 'drop-shadow(0 3px 16px rgba(0,0,0,.95))', animation: 'logoF 3s ease-in-out infinite' }} />
-          <div style={{ fontSize: 'clamp(10px,2.5vw,14px)', color: '#f5c842', textAlign: 'center', lineHeight: 2.1, fontWeight: 700 }}>盛岡のわんこそばを積み上げろ！</div>
-          <div onClick={g.reset} style={{ background: 'linear-gradient(135deg,#c8a020,#8a6a00)', color: '#fff', padding: 'clamp(12px,2.5vw,18px) clamp(40px,9vw,68px)', letterSpacing: 2, cursor: 'pointer', fontSize: 'clamp(17px,4.2vw,24px)', fontWeight: 900, borderRadius: 14, boxShadow: '0 4px 28px rgba(200,160,0,.5)', border: '1px solid rgba(255,220,100,.3)' }}>スタート！</div>
-          <div style={{ fontSize: 'clamp(8px,1.8vw,10px)', color: '#335', textAlign: 'center', lineHeight: 2 }}>←→ 移動　↑ 回転　↓ 落下　SPACE DROP　C HOLD</div>
+      {/* Combo animation */}
+      {g.comboAnim && (
+        <div style={{ position:'fixed', top:'36%', left:'50%', zIndex:50, textAlign:'center', pointerEvents:'none', animation:'comboAppear 1.8s forwards' }}>
+          <div style={{ fontSize:'clamp(30px,8vw,52px)', fontWeight:900, color:'#f0c030', textShadow:'0 0 30px #f0a010,0 0 60px #c08000', letterSpacing:2 }}>
+            {g.comboAnim.label}
+          </div>
+          {g.comboAnim.pts > 0 && (
+            <div style={{ fontSize:'clamp(16px,4vw,22px)', color:'#f0e080', fontWeight:700, textShadow:'0 0 15px #c0a000' }}>
+              +{g.comboAnim.pts.toLocaleString()}
+            </div>
+          )}
+          <div style={{ fontSize:'clamp(11px,2.5vw,16px)', color:'#c8a040', fontWeight:700, letterSpacing:3, marginTop:4 }}>COMBO!</div>
         </div>
       )}
 
-      {/* ゲームオーバー */}
-      {g.over && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,5,20,.96)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-          <div style={{ fontSize: 'clamp(18px,4.5vw,30px)', color: '#e88', fontWeight: 900, textShadow: '0 0 24px rgba(220,80,80,.6)' }}>わんこがあふれた！</div>
-          <div style={{ fontSize: 'clamp(14px,3.5vw,22px)', color: '#eee' }}>スコア <span style={{ color: '#f5c842', fontWeight: 900, fontSize: '1.4em' }}>{g.score.toLocaleString()}</span></div>
-          <div style={{ fontSize: 'clamp(10px,2.2vw,14px)', color: '#446' }}>Lv.{g.level} / {g.lines}ライン</div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div onClick={g.reset} style={{ background: 'linear-gradient(135deg,#aa2040,#660020)', color: '#fff', padding: '10px 28px', fontSize: 'clamp(14px,3.5vw,18px)', fontWeight: 700, borderRadius: 12, cursor: 'pointer' }}>もう一杯！🍜</div>
-            <div onClick={onBack} style={{ background: 'rgba(5,15,45,.9)', color: '#7eb8f7', padding: '10px 20px', fontSize: 'clamp(13px,3vw,16px)', borderRadius: 12, cursor: 'pointer', border: '1px solid rgba(80,120,200,.4)' }}>タイトルへ</div>
+      {/* Start overlay */}
+      {!g.started && !g.over && (
+        <div style={{ position:'fixed', inset:0, zIndex:30, background:'rgba(0,3,18,0.94)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:20 }}>
+          <img src="/assets/logo.webp" alt="" style={{ height:'clamp(48px,12vw,80px)', width:'auto', maxWidth:'75vw', objectFit:'contain', filter:'drop-shadow(0 3px 20px rgba(0,0,0,.95))', animation:'logoF 3s ease-in-out infinite' }} />
+          <div style={{ textAlign:'center', lineHeight:2, color:'#7090c0', fontSize:'clamp(11px,2.5vw,15px)' }}>
+            バージョン: <span style={{ color:ver.color, fontWeight:700 }}>{ver.emoji} {ver.name}</span>
+          </div>
+          <StoneBtn label="▶ スタート！" color="#f0c040" width={220} size="lg" onClick={g.reset} />
+          <div style={{ fontSize:'clamp(9px,2vw,11px)', color:'#334', textAlign:'center', lineHeight:2.2, marginTop:4 }}>
+            ←→ 移動　↑ 回転　↓ 落下　Space DROP　C HOLD
           </div>
         </div>
       )}
 
-      {/* ポーズ */}
+      {/* Game over */}
+      {g.over && (
+        <div style={{ position:'fixed', inset:0, zIndex:30, background:'rgba(0,3,18,0.97)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:14 }}>
+          <div style={{ fontSize:'clamp(26px,6.5vw,44px)', fontWeight:900, color:'#c03020', textShadow:'0 0 30px rgba(200,40,20,.5)', letterSpacing:3 }}>GAME OVER</div>
+          <div style={{ fontSize:'clamp(14px,3.5vw,20px)', color:'#c0c0e0' }}>スコア <span style={{ color:'#f0c040', fontSize:'1.5em', fontWeight:900 }}>{g.score.toLocaleString()}</span></div>
+          <div style={{ fontSize:13, color:'#446' }}>Lv.{g.level} / {g.lines} LINES</div>
+          <div style={{ display:'flex', gap:12, marginTop:10 }}>
+            <StoneBtn label="もう一杯！" color="#f0c040" width={160} onClick={g.reset} />
+            <StoneBtn label="タイトル"   color="#7090a0" width={130} onClick={onBack} />
+          </div>
+        </div>
+      )}
+
+      {/* Pause */}
       {g.paused && !g.over && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,5,20,.90)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-          <div style={{ fontSize: 'clamp(22px,5.5vw,36px)', color: '#f5c842', fontWeight: 900, letterSpacing: 4 }}>⏸ 休憩中</div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div onClick={() => g.setPaused(false)} style={{ background: 'linear-gradient(135deg,#1a6640,#0d3320)', color: '#fff', padding: '10px 28px', fontSize: 'clamp(13px,3.2vw,18px)', fontWeight: 700, borderRadius: 11, cursor: 'pointer' }}>▶ 再開</div>
-            <div onClick={onBack} style={{ background: 'rgba(5,15,45,.9)', color: '#7eb8f7', padding: '10px 20px', fontSize: 'clamp(13px,3vw,16px)', borderRadius: 11, cursor: 'pointer', border: '1px solid rgba(80,120,200,.4)' }}>タイトルへ</div>
+        <div style={{ position:'fixed', inset:0, zIndex:30, background:'rgba(0,3,18,0.9)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16 }}>
+          <div style={{ fontSize:'clamp(24px,6vw,38px)', fontWeight:900, color:'#f0c040', letterSpacing:4 }}>⏸ PAUSE</div>
+          <div style={{ display:'flex', gap:12 }}>
+            <StoneBtn label="▶ 再開"   color="#80e080" width={150} onClick={() => g.setPaused(false)} />
+            <StoneBtn label="タイトル" color="#7090a0" width={130} onClick={onBack} />
           </div>
         </div>
       )}
